@@ -1,0 +1,465 @@
+openapi: 3.0.3
+info:
+  title: DCM Object Validator - OpenAPI-Document
+  description: |-
+    This is the OpenAPI 3.0 specification describing the containers used
+    for validation of IP('information package')-payload in the context of the dcm in the lzvnrw-
+    project.
+  version: 1.0.0
+servers:
+  - url: 'http://localhost:8080/'
+externalDocs:
+  description: See repository hosted by University of Münster
+  url: https://zivgitlab.uni-muenster.de/ULB/lzvnrw/team-se/dcm-object-validator-api
+tags:
+  - name: validation
+    description: Object validation-related endpoints
+paths:
+  /ping:
+    get:
+      summary: ping
+      description: Use as connection test. Returns 'pong'.
+      operationId: ping
+      responses:
+        '200':
+          description: success
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: pong
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+  /status:
+    get:
+      summary: container status
+      description: Returns Status (readiness) of container.
+      operationId: get_status
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+  /identify:
+    get:
+      summary: container self-description
+      description: Returns a detailed description of the container properties.
+      operationId: identify
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfDescription'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+  /report:
+    get:
+      summary: get ValidationReport
+      description: Returns ValidationReport if the corresponding job has finished.
+      operationId: get_report
+      tags:
+        - validation
+      parameters:
+        - $ref: '#/components/parameters/Token'
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '404':
+          $ref: '#/components/responses/404NoTarget'
+        '503':
+          $ref: '#/components/responses/503Busy'
+  /validate_object:
+    post:
+      summary: validate Object
+      description: |-
+        Perform a sequence of validation-steps on the given Object:
+        * identify IP-payload file formats,
+        * validate those files with respect to their format using the plugins listed in Modules.
+        * validate the Object's checksum if a reference Checksum is provided.
+
+        Here, all validation modules (that are unavailable or unknown; use the
+        /identify endpoint to get a list) in Modules except for file_format-plugins
+        are silently ignored.
+        Omitting the Modules-argument performs a validation using all available plugins,
+        whereas providing an empty list skips the file_format-validation.
+
+        If the request is accepted, a 201-response is triggered containing a JobToken.
+        This token is required in the /report-endpoint to get a ValidationReport.
+      operationId: validate_object
+      tags:
+        - validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                object:
+                  $ref: '#/components/schemas/Object'
+                modules:
+                  $ref: '#/components/schemas/ListOfModules'
+                callbackUrl:
+                  $ref: '#/components/schemas/CallbackUrl'
+                checksum:
+                  $ref: '#/components/schemas/Checksum'
+              required:
+                - object
+      callbacks:
+        termination:
+          $ref: '#/components/callbacks/termination'
+      responses:
+        '201':
+          $ref: '#/components/responses/201AcceptedSubmission'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '404':
+          $ref: '#/components/responses/404NoTarget'
+        '422':
+          $ref: '#/components/responses/422SemanticProblem'
+        '503':
+          $ref: '#/components/responses/503Busy'
+  /validate_ip:
+    post:
+      summary: validate IP
+      description: |-
+        Perform the sequence of validation-steps as listed in the Modules-argument.
+
+        If Modules is left empty, the default uses all validation-modules, e.g.
+        * validate IP-payload integrity (file checksums),
+        * validate IP-payload structure (payload-profile),
+        * identify IP-payload file formats, and
+        * validate those files with respect to their format.
+
+        If the request is accepted, a 201-response is triggered containing a JobToken.
+        This token is required in the /report-endpoint to get a ValidationReport.
+      operationId: validate_ip
+      tags:
+        - validation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                IP:
+                  $ref: '#/components/schemas/IP'
+                modules:
+                  $ref: '#/components/schemas/ListOfModules'
+                callbackUrl:
+                  $ref: '#/components/schemas/CallbackUrl'
+                profileUrl:
+                  $ref: '#/components/schemas/ProfileUrl'
+              required:
+                - IP
+      callbacks:
+        termination:
+          $ref: '#/components/callbacks/termination'
+      responses:
+        '201':
+          $ref: '#/components/responses/201AcceptedSubmission'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '404':
+          $ref: '#/components/responses/404NoTarget'
+        '422':
+          $ref: '#/components/responses/422SemanticProblem'
+        '503':
+          $ref: '#/components/responses/503Busy'
+    # delete: # delete callback (or even validation-job?)
+components:
+  schemas:
+    Module:
+      type: object
+      description: module used for validation of Objects
+      properties:
+        name:
+          type: string
+          description: name identifier for module
+          example: jhove_plugin
+        description:
+          type: string
+          description: description of module features
+          example: file-format validation based on jhove
+      required:
+        - name
+        - description
+    SelfDescription:
+      type: object
+      description: contains a concise self-description of the container and its functionalities
+      properties:
+        api_version:
+          type: string
+          description: version string of the Object Validator API
+          example: "0.2.0"
+        container_version:
+          type: string
+          description: version string of the container app
+          example: "0.1.0"
+        validator_lib_version:
+          type: string
+          description: version string of the validation library
+          example: "0.4.0"
+        default_profile_version:
+          type: string
+          description: version string of the default BagIt payload profile
+          example: "0.1.0"
+        default_profile_identifier:
+          type: string
+          description: default BagIt payload profile identifier
+          example: "https://www.lzv.nrw/payload_profile.json"
+        description:
+          type: string
+          description: a verbose self-description of the container capabilities
+          example: "This container supports the validation of IPs and Objects using the modules ..."
+        modules:
+          type: array
+          description: list of available validation modules
+          items:
+            $ref: '#/components/schemas/Module'
+      required:
+        - api_version
+        - container_version
+        - validator_lib_version
+        - default_profile_version
+        - default_profile_identifier
+        - description
+        - modules
+    Token: # see also components/parameters/Token
+      title: Token
+      description: unique identifier
+      type: string
+      example: 641a8c6eb961e8bab9cc2e7583236c35429d6c5cf81e2f4f2ee5b0258bcff34ee607d3215bbe3e654efc006b67a30eef17188cb51dcfaa8574088b3afa85a0c0
+    JobToken:
+      title: JobToken
+      description:
+        A JobToken is used to uniquely identify a specific validation-job.
+      type: object
+      properties:
+        token:
+          $ref: '#/components/schemas/Token'
+        expires:
+          type: boolean
+          description: does the token expire
+          example: true
+        expires_at:
+          type: string
+          description:
+            ISO-8601 datetime-stamp in the format yyyy-MM-dd'T'HH:mm:ss.SSSZ
+          example: 2024-01-01T00:00:00+01:00
+      required:
+        - token
+        - expires
+    Status:
+      title: ContainerStatus
+      description:
+        A ContainerStatus gives a summary of the container's status like
+        availability for job submissions
+      type: object
+      properties:
+        ready:
+          type: boolean
+          description: availability of container for a validation request
+          example: true
+      required:
+        - ready
+    ProfileUrl:
+      title: ProfileURL
+      description: |-
+        url for a job-specific BagIt Payload Profile.
+
+        If empty, the default value as configured in the container-.env
+        of DEFAULT_PAYLOAD_PROFILE_URL is used. Use `/identify` to get
+        default profile information for this container.
+      type: string
+      example: https://www.lzv.nrw/payload_profile.json
+    IP:
+      title: IP
+      description:
+        An IP is represented by its relative path within the shared filesystem.
+      type: object
+      properties:
+        path:
+          type: string
+          description: relative path referencing an IP in file storage
+          example: ip/abcde-12345-fghijk-67890
+      required:
+        - path
+    Object:
+      title: Object
+      description:
+        An Object is represented by its relative path within the shared filesystem.
+      type: object
+      properties:
+        path:
+          type: string
+          description: relative path referencing an Object in file storage
+          example: obj/abcde-12345-fghijk-67890.tiff
+      required:
+        - path
+    Report:
+      title: ValidationReport
+      description:
+        A ValidationReport contains the information on the validity of an
+        IP/Object resulting from a validation process.
+      type: object
+      properties:
+        valid:
+          type: boolean
+          description: overall validity of an IP/Object
+          example: false
+        errors:
+          type: array
+          description: errors encountered during validation of an IP/Object
+          items:
+            type: string
+          example:
+            - "Payload Structure Validator: File <X> found in illegal location of payload directory."
+            - "Integrity Validator: Payload-Oxum validation failed. Expected 2 files and 2222 bytes but found 3 files and 2222 bytes."
+        warnings:
+          type: array
+          description: warnings relevant for validity of an IP/Object
+          items:
+            type: string
+          example:
+            - "File Format Validator: No validator for format <.XYZ> of file <X>."
+        info:
+          type: array
+          description: information regarding validation of an IP/Object
+          items:
+            type: string
+          example:
+            - "Payload Structure Validator: Bag's payload directory structure does not conform to profile."
+            - "Payload Structure Validator: Bag's payload filenames' capitalization is fine."
+            - "Payload Integrity Validator: Bag's payload checksums do not conform to manifest information or missing files."
+            - "Jhove-Plugin: File <X> is well-formed."
+            - "File Format Validator: File formats in payload are valid."
+      required:
+        - valid
+    ListOfModules:
+      title: ListOfModules
+      type: array
+      description: |-
+        List of modules to be used for validation of IPs
+
+        If omitted, all available modules are used for validation.
+        In order to skip these validation steps, an empty list can be
+        passed.
+
+        The identifiers for the modules used here are identical
+        to those returned in the /identify-endpoint.
+
+        The module file_format uses all available plugins for validation
+        of file formats. Individual plugins for the file_format-module
+        can be selected by prepending 'file_format_' to the plugin's
+        name.
+
+        Listing unavailable or unknown modules yields a report tagged as invalid.
+        Use the /identify-endpoint to get a list of available Module-arguments.
+      items:
+        type: string
+      example:
+        - payload_structure
+        - payload_integrity
+        - file_format
+    CallbackUrl:
+      title: CallbackURL
+      type: string
+      description: job-termination callback url
+      example: https://www.lzv.nrw/callback
+    Checksum:
+      type: object
+      description: Object checksum information
+      properties:
+        method:
+          type: string
+          description: hashing algorithm
+          enum:
+            - md5
+            - sha1
+            - sha256
+            - sha512
+          example: md5
+        value:
+          type: string
+          description: checksum-value
+          example: 46a78da2a246a86f76d066db766cda4f
+      required:
+        - method
+        - value
+  parameters:
+    Token: # see also components/schemas/Token
+      in: query
+      name: token
+      required: true
+      description:
+        unique identifier for validation-job
+      example: 641a8c6eb961e8bab9cc2e7583236c35429d6c5cf81e2f4f2ee5b0258bcff34ee607d3215bbe3e654efc006b67a30eef17188cb51dcfaa8574088b3afa85a0c0
+      schema:
+        $ref: '#/components/schemas/Token'
+  responses:
+    201AcceptedSubmission:
+      description: submission success
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JobToken'
+    400BadRequest:
+      description: malformed request body
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Missing required argument <X>"
+    404NoTarget:
+      description: target not found
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Resource not found. Target does not exist."
+    422SemanticProblem:
+      description: semantic problem
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Argument <X> has the wrong type"
+    503Busy:
+      description: container is busy
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Service unavailable: maximum number of submissions reached."
+  callbacks:
+    termination:
+      '{$request.body#/CallbackUrl}':
+        post:
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    token:
+                      $ref: '#/components/schemas/Token'
+                  required:
+                    - token
+          responses:
+            '200':
+              description: accept callback
