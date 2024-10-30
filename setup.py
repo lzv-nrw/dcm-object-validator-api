@@ -2,7 +2,7 @@ import os
 from setuptools import setup
 
 setup(
-    version=os.environ.get("API_VERSION") or "0.0.0",
+    version="4.1.0",
     name="dcm-object-validator-api",
     description="api for object-validator-containers",
     author="LZV.nrw",

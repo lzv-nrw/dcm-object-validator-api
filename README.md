@@ -1,6 +1,6 @@
-# LZV.nrw DCM Object Validator API
-This package provides the OpenAPI document for the [dcm-object-validator](https://github.com/lzv-nrw/dcm-object-validator) project of LZV.nrw.
+# dcm-object-validator-api
 
+This package provides the OpenAPI Specification for the [dcm-object-validator](https://github.com/lzv-nrw/dcm-object-validator) project of lzv.nrw.
 # Contributors
 * Sven Haubold
 * Orestis Kazasidis

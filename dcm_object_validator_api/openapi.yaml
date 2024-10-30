@@ -5,7 +5,7 @@ info:
     This is the OpenAPI 3.0 specification describing the containers used
     for validation of IP('information package')-payload in the context of the dcm in the lzvnrw-
     project.
-  version: 1.0.0
+  version: 4.1.0
 servers:
   - url: 'http://localhost:8080/'
 externalDocs:
@@ -13,7 +13,7 @@ externalDocs:
   url: https://zivgitlab.uni-muenster.de/ULB/lzvnrw/team-se/dcm-object-validator-api
 tags:
   - name: validation
-    description: Object validation-related endpoints
+    description: validation-related endpoints
 paths:
   /ping:
     get:
@@ -60,8 +60,9 @@ paths:
           $ref: '#/components/responses/400BadRequest'
   /report:
     get:
-      summary: get ValidationReport
-      description: Returns ValidationReport if the corresponding job has finished.
+      summary: get report
+      description: |-
+        Returns Report if the job associated with the given token exists.
       operationId: get_report
       tags:
         - validation
@@ -73,14 +74,41 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Report'
+                allOf:
+                  - $ref: '#/components/schemas/Report'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobData'
+                    example:
+                      data:
+                        valid: false
+                        details:
+                          file_format:
+                            valid: false
+                            log:
+                              ERROR:
+                                - datetime: "2024-01-01T00:00:01+00:00"
+                                  origin: File Format Validator | Jhove-Plugin
+                                  body: File '<...>' has a bad file header.
+                              INFO:
+                                - datetime: "2024-01-01T00:00:01+00:00"
+                                  origin: File Format Validator | Jhove-Plugin
+                                  body: File formats are invalid.
+                          payload_integrity:
+                            valid: true
+                            log:
+                              INFO:
+                                - datetime: "2024-01-01T00:00:01+00:00"
+                                  origin: Payload Integrity Validator
+                                  body: No problems with payload integrity.
         '400':
           $ref: '#/components/responses/400BadRequest'
         '404':
           $ref: '#/components/responses/404NoTarget'
         '503':
           $ref: '#/components/responses/503Busy'
-  /validate_object:
+  /validate/object:
     post:
       summary: validate Object
       description: |-
@@ -96,7 +124,7 @@ paths:
         whereas providing an empty list skips the file_format-validation.
 
         If the request is accepted, a 201-response is triggered containing a JobToken.
-        This token is required in the /report-endpoint to get a ValidationReport.
+        This token is required in the /report-endpoint to get a Report.
       operationId: validate_object
       tags:
         - validation
@@ -107,16 +135,56 @@ paths:
             schema:
               type: object
               properties:
-                object:
-                  $ref: '#/components/schemas/Object'
-                modules:
-                  $ref: '#/components/schemas/ListOfModules'
+                validation:
+                  type: object
+                  properties:
+                    target:
+                      $ref: '#/components/schemas/Target'
+                    modules:
+                      $ref: '#/components/schemas/ListOfModules'
+                    args:
+                      type: object
+                      description:
+                        module-specific arguments
+                      properties:
+                        file_integrity:
+                          type: object
+                          description:
+                            arguments for the file_integrity module
+                          properties:
+                            method:
+                              type: string
+                              description: hashing algorithm
+                              enum:
+                                - md5
+                                - sha1
+                                - sha256
+                                - sha512
+                              example: md5
+                            value:
+                              type: string
+                              description: checksum-value
+                              example: 46a78da2a246a86f76d066db766cda4f
+                          required:
+                            - method
+                            - value
+                  required:
+                    - target
                 callbackUrl:
                   $ref: '#/components/schemas/CallbackUrl'
-                checksum:
-                  $ref: '#/components/schemas/Checksum'
               required:
-                - object
+                - validation
+              example:
+                validation:
+                  target:
+                    path: obj/abcde-12345-fghijk-67890.tiff
+                  modules:
+                    - file_format
+                    - file_integrity
+                  args:
+                    file_integrity:
+                      method: md5
+                      value: 46a78da2a246a86f76d066db766cda4f
       callbacks:
         termination:
           $ref: '#/components/callbacks/termination'
@@ -131,7 +199,7 @@ paths:
           $ref: '#/components/responses/422SemanticProblem'
         '503':
           $ref: '#/components/responses/503Busy'
-  /validate_ip:
+  /validate/ip:
     post:
       summary: validate IP
       description: |-
@@ -144,7 +212,7 @@ paths:
         * validate those files with respect to their format.
 
         If the request is accepted, a 201-response is triggered containing a JobToken.
-        This token is required in the /report-endpoint to get a ValidationReport.
+        This token is required in the /report-endpoint to get a Report.
       operationId: validate_ip
       tags:
         - validation
@@ -155,16 +223,43 @@ paths:
             schema:
               type: object
               properties:
-                IP:
-                  $ref: '#/components/schemas/IP'
-                modules:
-                  $ref: '#/components/schemas/ListOfModules'
+                validation:
+                  type: object
+                  properties:
+                    target:
+                      $ref: '#/components/schemas/Target'
+                    modules:
+                      $ref: '#/components/schemas/ListOfModules'
+                    args:
+                      type: object
+                      description:
+                        module-specific arguments
+                      properties:
+                        payload_structure:
+                          type: object
+                          description:
+                            arguments for the payload_structure module
+                          properties:
+                            profileUrl:
+                              $ref: '#/components/schemas/ProfileUrl'
+                  required:
+                    - target
                 callbackUrl:
                   $ref: '#/components/schemas/CallbackUrl'
-                profileUrl:
-                  $ref: '#/components/schemas/ProfileUrl'
               required:
-                - IP
+                - validation
+              example:
+                validation:
+                  target:
+                    path: ip/abcde-12345-fghijk-67890
+                  modules:
+                    - payload_structure
+                    - payload_integrity
+                    - file_format
+                  args:
+                    payload_structure:
+                      profileUrl:
+                        https://www.lzv.nrw/payload_profile.json
       callbacks:
         termination:
           $ref: '#/components/callbacks/termination'
@@ -179,89 +274,399 @@ paths:
           $ref: '#/components/responses/422SemanticProblem'
         '503':
           $ref: '#/components/responses/503Busy'
-    # delete: # delete callback (or even validation-job?)
+  /validate:
+    delete:
+      summary: abort job
+      description:
+        Aborts the execution of a job (if already running) or removes it
+        from queue (otherwise). This operation is performed
+        synchronously.
+      operationId: abort
+      tags:
+        - validation
+      parameters:
+        - $ref: '#/components/parameters/Token'
+        - name: broadcast
+          in: query
+          description:
+            whether this request should be broadcasted
+            (only relevant in parallel deployment and only if message
+            broadcasting is configured)
+          schema:
+            type: boolean
+            default: true
+          required: false
+        - name: re-queue
+          in: query
+          description:
+            whether the associated token should be added to the queue
+            again
+          schema:
+            type: boolean
+            default: false
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                origin:
+                  type: string
+                  description: verbose origin of request
+                  example: frontend
+                reason:
+                  type: string
+                  description: verbose reason for request
+                  example: user abort
+      responses:
+        '200':
+          description: success
+          content:
+            text/plain:
+              schema:
+                type: string
+                example:
+                  "successfully aborted '37ee72d6-80ab-4dcd-a68d-f8d32766c80d'"
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '502':
+          description: bad gateway
+          content:
+            text/plain:
+              schema:
+                type: string
+                example:
+                  "notification service unavailable"
 components:
   schemas:
-    Module:
+    Plugin:
+      title: Plugin
       type: object
-      description: module used for validation of Objects
+      description: DCM-service plugin
       properties:
         name:
           type: string
-          description: name identifier for module
-          example: jhove_plugin
+          description: plugin identifier
+          example: plugin-0
         description:
           type: string
-          description: description of module features
-          example: file-format validation based on jhove
+          description: description of plugin features
+          example: this plugin performs ...
       required:
         - name
         - description
     SelfDescription:
       type: object
-      description: contains a concise self-description of the container and its functionalities
+      description: information regarding the service's properties
       properties:
-        api_version:
-          type: string
-          description: version string of the Object Validator API
-          example: "0.2.0"
-        container_version:
-          type: string
-          description: version string of the container app
-          example: "0.1.0"
-        validator_lib_version:
-          type: string
-          description: version string of the validation library
-          example: "0.4.0"
-        default_profile_version:
-          type: string
-          description: version string of the default BagIt payload profile
-          example: "0.1.0"
-        default_profile_identifier:
-          type: string
-          description: default BagIt payload profile identifier
-          example: "https://www.lzv.nrw/payload_profile.json"
         description:
           type: string
-          description: a verbose self-description of the container capabilities
-          example: "This container supports the validation of IPs and Objects using the modules ..."
-        modules:
-          type: array
-          description: list of available validation modules
-          items:
-            $ref: '#/components/schemas/Module'
+          description:
+            a verbose self-description of the service functionality
+          example:
+            This service provides endpoints for ...
+        version:
+          type: object
+          description: collection of version strings
+          properties:
+            api:
+              type: string
+              description: version string of the implemented API
+              example: "0.2.0"
+            app:
+              type: string
+              description: version string of the app
+              example: "0.1.0"
+            python:
+              type: string
+              description: version of the python implementation
+              example: 3.10.12 (main, Mar 22 2024, 16:50:05) [GCC 11.4.0]
+            software:
+              type: object
+              description: deployed software versions
+              properties:
+                java:
+                  type: string
+                  description: version of the deployed Java-runtime
+                  example: openjdk 17.0.11 2024-04-16
+                jhove:
+                  type: string
+                  description: version of the deployed JHOVE
+                  example: Jhove (Rel. 1.28.0, 2023-05-18)
+                jhove_modules:
+                  type: object
+                  description: versions of deployed JHOVE-modules
+                  additionalProperties:
+                    type: string
+                  example:
+                    JPEG-hul: "1.5.4"
+                    PDF-hul: "1.12.4"
+                    TIFF-hul: "1.9.4"
+            profile_payload:
+              type: string
+              description:
+                version string of the default BagIt-payload-profile
+              example: "0.1.0"
+            lib:
+              type: object
+              description: deployed library versions
+              additionalProperties:
+                type: string
+                description: version string
+                example: "0.1.0"
+              example:
+                dependency-a: "1.0.0"
+                dependency-b: "0.2.0.post1"
+          required:
+            - api
+            - app
+            - python
+            - software
+            - lib
+        configuration:
+          type: object
+          description: service configuration details
+          properties:
+            settings:
+              type: object
+              properties:
+                allow_cors:
+                  type: boolean
+                  description: whether CORS requests are allowed
+                  example: true
+                fs_mount_point:
+                  type: string
+                  description: mount point of shared file system
+                  example: /file_storage
+                orchestration:
+                  type: object
+                  description: orchestration-related settings
+                  properties:
+                    at_startup:
+                      type: boolean
+                      description:
+                        whether orchestration-processing loop is run at startup
+                      example: true
+                    queue:
+                      $ref: '#/components/schemas/DBAdapter'
+                    registry:
+                      $ref: '#/components/schemas/DBAdapter'
+                    token:
+                      type: object
+                      description: orchestration token-related settings
+                      properties:
+                        expiration:
+                          type: boolean
+                          description: whether job tokens (and their
+                            associated info like report) expire
+                          example: true
+                        duration:
+                          type: integer
+                          description:
+                            time until job token expires in seconds
+                          example: 3600
+                      required:
+                        - expiration
+                        - duration
+                    debug:
+                      type: boolean
+                      description: whether to have orchestrator print
+                        debug-information
+                      example: true
+                    controls_api:
+                      type: boolean
+                      description: whether the orchestration-controls
+                        API is available
+                      example: true
+                    abort:
+                      type: object
+                      description: |-
+                        abort-related settings
+
+                        only relevant in parallel deployment
+                      properties:
+                        subscription:
+                          type: boolean
+                          description:
+                            whether a subscription to the abort-notifications
+                            is made
+                          example: true
+                        url:
+                          type: string
+                          description: url of the notification service
+                          example: https://www.lzv.nrw/abort-notifications
+                        timeout:
+                          type: object
+                          description: timeout-related settings
+                          properties:
+                            duration:
+                              type: number
+                              description: timeout duration
+                              example: 1.0
+                          required:
+                            - duration
+                        callback:
+                          type: string
+                          description: |-
+                            url for abort-callbacks
+
+                            if omitted, the subscriber's request address
+                            is used (as determined by the notification
+                            service)
+                          example: https://www.lzv.nrw/subscriber
+                      required:
+                        - subscription
+                    daemon_interval:
+                      type: number
+                      description:
+                        interval of orchestrator-restarts (after crash) in
+                        seconds
+                      example: 1
+                    orchestrator_interval:
+                      type: number
+                      description: time in seconds between each iteration
+                        of the orchestrator's processing loop
+                      example: 1
+                  required:
+                    - at_startup
+                    - queue
+                    - registry
+                    - token
+                    - debug
+                    - controls_api
+                    - abort
+                validation:
+                  type: object
+                  description: validation-related settings
+                  properties:
+                    object:
+                      type: object
+                      description: object validation-related settings
+                      properties:
+                        plugins:
+                          type: array
+                          description: list of default plugin identifiers
+                          items:
+                            type: string
+                            description: plugin identifier
+                          example:
+                            - file_format
+                            - file_integrity
+                      required:
+                        - plugins
+                    ip:
+                      type: object
+                      description: IP validation-related settings
+                      properties:
+                        payload_profile:
+                          type: string
+                          description: default BagIt payload profile identifier
+                          example: "https://www.lzv.nrw/payload_profile.json"
+                        plugins:
+                          type: object
+                          description: list of default plugin identifiers
+                          items:
+                            type: string
+                            description: plugin identifier
+                          example:
+                            - file_format
+                            - payload_integrity
+                      required:
+                        - plugins
+                  required:
+                    - object
+                    - ip
+              required:
+                - allow_cors
+                - fs_mount_point
+                - orchestration
+                - validation
+            plugins:
+              type: object
+              description: mapping of available plugins
+              additionalProperties:
+                $ref: "#/components/schemas/Plugin"
+              example:
+                plugin-0:
+                  name: plugin-0
+                  description: this plugin performs ...
+            services:
+              type: object
+              description:
+                mapping of hostname and url for secondary DCM-services
+              additionalProperties:
+                title: Service
+                type: string
+                format: url
+              example:
+                service: <service-url>
+          required:
+            - settings
+            - plugins
+            - services
       required:
-        - api_version
-        - container_version
-        - validator_lib_version
-        - default_profile_version
-        - default_profile_identifier
         - description
-        - modules
+        - version
+        - configuration
+    DBAdapter:
+      title: DBAdapter
+      type: object
+      description:
+        A DBAdapter characterizes an adapter for a database by type and
+        initialization settings.
+      properties:
+        type:
+          type: string
+          description: which adapter-type to use
+          enum:
+            - native
+            - http
+          example: http
+        settings:
+          type: object
+          description: |-
+            JSON object used to initialize the adapter
+
+            adapter-specific set of settings (used during
+            initialization); see dcm-common.db-subpackage for details
+          additionalProperties: true
+          example:
+            url: https://www.lzv.nrw/db
+            timeout: 10
+            proxies:
+              http: https://www.lzv.nrw/proxy
+      required:
+        - type
+        - settings
+    ISODateTime:
+      title: ISODateTime
+      description: ISO-8601 datetime-stamp
+      type: string
+      pattern: /[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}/
+      example: "2024-01-01T00:00:00+01:00"
     Token: # see also components/parameters/Token
       title: Token
       description: unique identifier
       type: string
-      example: 641a8c6eb961e8bab9cc2e7583236c35429d6c5cf81e2f4f2ee5b0258bcff34ee607d3215bbe3e654efc006b67a30eef17188cb51dcfaa8574088b3afa85a0c0
+      example: 37ee72d6-80ab-4dcd-a68d-f8d32766c80d
     JobToken:
       title: JobToken
       description:
-        A JobToken is used to uniquely identify a specific validation-job.
+        A JobToken is used to uniquely identify a specific job.
       type: object
       properties:
-        token:
+        value:
           $ref: '#/components/schemas/Token'
         expires:
           type: boolean
           description: does the token expire
           example: true
         expires_at:
-          type: string
-          description:
-            ISO-8601 datetime-stamp in the format yyyy-MM-dd'T'HH:mm:ss.SSSZ
-          example: 2024-01-01T00:00:00+01:00
+          $ref: '#/components/schemas/ISODateTime'
       required:
-        - token
+        - value
         - expires
     Status:
       title: ContainerStatus
@@ -272,7 +677,7 @@ components:
       properties:
         ready:
           type: boolean
-          description: availability of container for a validation request
+          description: availability of container for a request
           example: true
       required:
         - ready
@@ -286,69 +691,204 @@ components:
         default profile information for this container.
       type: string
       example: https://www.lzv.nrw/payload_profile.json
-    IP:
-      title: IP
+    Target:
+      title: Target
       description:
-        An IP is represented by its relative path within the shared filesystem.
+        A validation target is represented by its relative path within
+        the shared filesystem.
       type: object
       properties:
         path:
           type: string
-          description: relative path referencing an IP in file storage
+          description: relative path
           example: ip/abcde-12345-fghijk-67890
       required:
         - path
-    Object:
-      title: Object
-      description:
-        An Object is represented by its relative path within the shared filesystem.
+    LogMessage:
+      title: LogMessage
+      description: |-
+        This schema defines the format of the entries occurring in the
+        log of a Report. A LogMessage consists of
+
+        * datetime information (regarding time of message creation),
+        * an origin (who filed this message), and
+        * the actual message.
       type: object
       properties:
-        path:
+        datetime:
+          $ref: '#/components/schemas/ISODateTime'
+        origin:
           type: string
-          description: relative path referencing an Object in file storage
-          example: obj/abcde-12345-fghijk-67890.tiff
+          description: origin of message creation
+          example: Object Validator
+        body:
+          type: string
+          description: message body
+          example: Queued job.
       required:
-        - path
-    Report:
-      title: ValidationReport
-      description:
-        A ValidationReport contains the information on the validity of an
-        IP/Object resulting from a validation process.
+        - datetime
+        - origin
+        - body
+    Log:
+      title: Log
+      description: |-
+        Common Log categories are: ERROR, WARNING, INFO, EVENT,
+        NETWORK, FILE_SYSTEM, STARTUP, SHUTDOWN, USER,
+        AUTHENTICATION, and SECURITY.
+      type: object
+      additionalProperties:
+        title: LogCategory
+        description: |-
+          list of LogMessage objects
+        type: array
+        items:
+          $ref: "#/components/schemas/LogMessage"
+      example:
+        INFO:
+          - datetime: "2024-01-01T00:00:00+01:00"
+            origin: Object Validator
+            body: Using default value '<...>' for argument '<...>'.
+        EVENT:
+          - datetime: "2024-01-01T00:00:00+01:00"
+            origin: Object Validator
+            body: Queued job.
+          - datetime: "2024-01-01T00:00:02+01:00"
+            origin: Object Validator
+            body: Job exited normally.
+    JobData:
+      title: JobData
+      description: |-
+        job output data (data-property in Report schema)
+
+        additionalProperties keys are given by modules' string-
+        identifiers
       type: object
       properties:
         valid:
           type: boolean
-          description: overall validity of an IP/Object
-          example: false
-        errors:
-          type: array
-          description: errors encountered during validation of an IP/Object
-          items:
-            type: string
-          example:
-            - "Payload Structure Validator: File <X> found in illegal location of payload directory."
-            - "Integrity Validator: Payload-Oxum validation failed. Expected 2 files and 2222 bytes but found 3 files and 2222 bytes."
-        warnings:
-          type: array
-          description: warnings relevant for validity of an IP/Object
-          items:
-            type: string
-          example:
-            - "File Format Validator: No validator for format <.XYZ> of file <X>."
-        info:
-          type: array
-          description: information regarding validation of an IP/Object
-          items:
-            type: string
-          example:
-            - "Payload Structure Validator: Bag's payload directory structure does not conform to profile."
-            - "Payload Structure Validator: Bag's payload filenames' capitalization is fine."
-            - "Payload Integrity Validator: Bag's payload checksums do not conform to manifest information or missing files."
-            - "Jhove-Plugin: File <X> is well-formed."
-            - "File Format Validator: File formats in payload are valid."
+          description: overall validity; true if Object/IP is valid
+        details:
+          type: object
+          description: detailed validation results per module
+          additionalProperties:
+            type: object
+            description: validation result by module (identifier)
+            properties:
+              valid:
+                type: boolean
+                description: validation result
+              log:
+                $ref: "#/components/schemas/Log"
+            required:
+              - valid
+              - log
       required:
-        - valid
+        - details
+      example:
+        valid: false
+        details:
+          file_format:
+            valid: false
+            log:
+              ERROR:
+                - datetime: "2024-01-01T00:00:01+00:00"
+                  origin: File Format Validator | Jhove-Plugin
+                  body: File '<...>' has a bad file header.
+              INFO:
+                - datetime: "2024-01-01T00:00:01+00:00"
+                  origin: File Format Validator | Jhove-Plugin
+                  body: File formats are invalid.
+          payload_integrity:
+            valid: true
+            log:
+              INFO:
+                - datetime: "2024-01-01T00:00:01+00:00"
+                  origin: Payload Integrity Validator
+                  body: No problems with payload integrity.
+    Report:
+      title: Report
+      description: |-
+        A Report contains
+
+        * information on job details (host, token),
+        * information on the progress of a job,
+        * a collection of log messages (categorized), and
+        * job output data.
+      type: object
+      properties:
+        host:
+          type: string
+          description: service url where this report has been generated
+          example: https://www.lzv.nrw/object_validator
+        token:
+          $ref: '#/components/schemas/JobToken'
+        args:
+          type: object
+          description: request body contents given during submission
+        progress:
+          type: object
+          properties:
+            status:
+              type: string
+              description: job status in processing pipeline
+              enum:
+                - queued
+                - running
+                - aborted
+                - completed
+            verbose:
+              type: string
+              description: verbose description of job-progress
+              example: Stage 1/2 (validator 'file_format')
+            numeric:
+              type: integer
+              description: numeric representation of progress in percent
+              example: 50
+          required:
+            - status
+            - verbose
+            - numeric
+        log:
+          $ref: '#/components/schemas/Log'
+      required:
+        - host
+        - token
+        - args
+        - progress
+        - log
+      example:
+        host: object_validator
+        token:
+          value: 37ee72d6-80ab-4dcd-a68d-f8d32766c80d
+          expires: true
+          expires_at: "2024-01-01T00:00:00+01:00"
+        args:
+          validation:
+            target:
+              path: ip/abcde-12345-fghijk-67890
+            modules:
+              - file_format
+              - payload_integrity
+        progress:
+          status: completed
+          verbose: Job terminated normally.
+          numeric: 100
+        log:
+          ERROR:
+            - datetime: "2024-01-01T00:00:01+01:00"
+              origin: Object Validator
+              body: Validator 'file_format' returned invalid.
+          INFO:
+            - datetime: "2024-01-01T00:00:01+01:00"
+              origin: Object Validator
+              body: Validator 'payload_integrity' returned valid.
+          EVENT:
+            - datetime: "2024-01-01T00:00:00+01:00"
+              origin: Object Validator
+              body: Queued job.
+            - datetime: "2024-01-01T00:00:02+01:00"
+              origin: Object Validator
+              body: Job exited normally.
     ListOfModules:
       title: ListOfModules
       type: array
@@ -380,34 +920,14 @@ components:
       type: string
       description: job-termination callback url
       example: https://www.lzv.nrw/callback
-    Checksum:
-      type: object
-      description: Object checksum information
-      properties:
-        method:
-          type: string
-          description: hashing algorithm
-          enum:
-            - md5
-            - sha1
-            - sha256
-            - sha512
-          example: md5
-        value:
-          type: string
-          description: checksum-value
-          example: 46a78da2a246a86f76d066db766cda4f
-      required:
-        - method
-        - value
   parameters:
     Token: # see also components/schemas/Token
       in: query
       name: token
       required: true
       description:
-        unique identifier for validation-job
-      example: 641a8c6eb961e8bab9cc2e7583236c35429d6c5cf81e2f4f2ee5b0258bcff34ee607d3215bbe3e654efc006b67a30eef17188cb51dcfaa8574088b3afa85a0c0
+        unique identifier for a job
+      example: 37ee72d6-80ab-4dcd-a68d-f8d32766c80d
       schema:
         $ref: '#/components/schemas/Token'
   responses:
@@ -454,12 +974,7 @@ components:
             content:
               application/json:
                 schema:
-                  type: object
-                  properties:
-                    token:
-                      $ref: '#/components/schemas/Token'
-                  required:
-                    - token
+                  $ref: '#/components/schemas/JobToken'
           responses:
             '200':
               description: accept callback
