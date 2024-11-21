@@ -2,10 +2,11 @@ import os
 from setuptools import setup
 
 setup(
-    version="4.1.0",
+    version="4.1.1",
     name="dcm-object-validator-api",
-    description="api for object-validator-containers",
+    description="specification of the DCM Object Validator API",
     author="LZV.nrw",
+    license="MIT",
     install_requires=[
     ],
     packages=[

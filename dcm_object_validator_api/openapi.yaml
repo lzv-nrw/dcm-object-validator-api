@@ -5,7 +5,7 @@ info:
     This is the OpenAPI 3.0 specification describing the containers used
     for validation of IP('information package')-payload in the context of the dcm in the lzvnrw-
     project.
-  version: 4.1.0
+  version: 4.1.1
 servers:
   - url: 'http://localhost:8080/'
 externalDocs:
