@@ -1,5 +1,11 @@
 # Changelog
 
+## [5.0.0] - 2025-02-13
+
+### Changed
+
+- **Breaking:** migrated from validation modules to plugin-system for validation-requests
+
 ## [4.1.1] - 2024-11-21
 
 ### Changed

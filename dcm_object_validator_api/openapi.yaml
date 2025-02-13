@@ -2,10 +2,10 @@ openapi: 3.0.3
 info:
   title: DCM Object Validator - OpenAPI-Document
   description: |-
-    This is the OpenAPI 3.0 specification describing the containers used
-    for validation of IP('information package')-payload in the context of the dcm in the lzvnrw-
-    project.
-  version: 4.1.1
+    This is the OpenAPI 3.0 specification documenting the
+    'DCM Object Validator'-API which provides functionality to validate
+    file formats and file integrity.
+  version: 5.0.0
 servers:
   - url: 'http://localhost:8080/'
 externalDocs:
@@ -82,50 +82,51 @@ paths:
                         $ref: '#/components/schemas/JobData'
                     example:
                       data:
+                        success: true
                         valid: false
                         details:
-                          file_format:
-                            valid: false
-                            log:
-                              ERROR:
-                                - datetime: "2024-01-01T00:00:01+00:00"
-                                  origin: File Format Validator | Jhove-Plugin
-                                  body: File '<...>' has a bad file header.
-                              INFO:
-                                - datetime: "2024-01-01T00:00:01+00:00"
-                                  origin: File Format Validator | Jhove-Plugin
-                                  body: File formats are invalid.
-                          payload_integrity:
+                          validation-request-1:
+                            success: true
                             valid: true
-                            log:
-                              INFO:
-                                - datetime: "2024-01-01T00:00:01+00:00"
-                                  origin: Payload Integrity Validator
-                                  body: No problems with payload integrity.
+                            records:
+                              0:
+                                success: true
+                                valid: true
+                                path: obj/abcde-12345-fghijk-67890.tiff
+                                log:
+                                  INFO:
+                                    - datetime: "2024-01-01T00:00:01+00:00"
+                                      origin: integrity-Plugin
+                                      body: File checksum is valid
+                          validation-request-2:
+                            success: true
+                            valid: false
+                            records:
+                              0:
+                                success: true
+                                valid: false
+                                path: obj/abcde-12345-fghijk-67890.tiff
+                                module: TIFF-hul
+                                log:
+                                  ERROR:
+                                    - datetime: "2024-01-01T00:00:01+00:00"
+                                      origin: jhove-Plugin
+                                      body: File has a bad file header.
         '400':
           $ref: '#/components/responses/400BadRequest'
         '404':
           $ref: '#/components/responses/404NoTarget'
         '503':
           $ref: '#/components/responses/503Busy'
-  /validate/object:
+  /validate:
     post:
-      summary: validate Object
+      summary: validate object
       description: |-
-        Perform a sequence of validation-steps on the given Object:
-        * identify IP-payload file formats,
-        * validate those files with respect to their format using the plugins listed in Modules.
-        * validate the Object's checksum if a reference Checksum is provided.
-
-        Here, all validation modules (that are unavailable or unknown; use the
-        /identify endpoint to get a list) in Modules except for file_format-plugins
-        are silently ignored.
-        Omitting the Modules-argument performs a validation using all available plugins,
-        whereas providing an empty list skips the file_format-validation.
+        Perform a validation based on the supplied plugin-configuration.
 
         If the request is accepted, a 201-response is triggered containing a JobToken.
         This token is required in the /report-endpoint to get a Report.
-      operationId: validate_object
+      operationId: validate
       tags:
         - validation
       requestBody:
@@ -140,36 +141,42 @@ paths:
                   properties:
                     target:
                       $ref: '#/components/schemas/Target'
-                    modules:
-                      $ref: '#/components/schemas/ListOfModules'
-                    args:
+                    plugins:
                       type: object
-                      description:
-                        module-specific arguments
-                      properties:
-                        file_integrity:
-                          type: object
-                          description:
-                            arguments for the file_integrity module
-                          properties:
-                            method:
-                              type: string
-                              description: hashing algorithm
-                              enum:
-                                - md5
-                                - sha1
-                                - sha256
-                                - sha512
-                              example: md5
-                            value:
-                              type: string
-                              description: checksum-value
-                              example: 46a78da2a246a86f76d066db766cda4f
-                          required:
-                            - method
-                            - value
+                      description: |-
+                        mapping of plugins to be used for validation
+
+                        the keys associated to plugin configurations are
+                        user-specified identifiers; they are used during
+                        the construction of the associated JobData-object
+                        in the generated Report
+                      additionalProperties:
+                        type: object
+                        properties:
+                          plugin:
+                            type: string
+                            description: |-
+                              plugin identifier
+
+                              (see contents of `configuration.plugins` as
+                              listed in a response to the GET-/identify
+                              endpoint; accepted plugin context:
+                              "validation")
+                          args:
+                            type: object
+                            description: |-
+                              plugin arguments
+
+                              (see contents of `configuration.plugins` as
+                              listed in a response to the GET-/identify
+                              endpoint for details on the plugin-specific
+                              call signature)
+                        required:
+                          - plugin
+                          - args
                   required:
                     - target
+                    - plugins
                 callbackUrl:
                   $ref: '#/components/schemas/CallbackUrl'
               required:
@@ -178,13 +185,17 @@ paths:
                 validation:
                   target:
                     path: obj/abcde-12345-fghijk-67890.tiff
-                  modules:
-                    - file_format
-                    - file_integrity
-                  args:
-                    file_integrity:
-                      method: md5
-                      value: 46a78da2a246a86f76d066db766cda4f
+                  plugins:
+                    validation-request-1:
+                      plugin: integrity
+                      args:
+                        method: md5
+                        value: 46a78da2a246a86f76d066db766cda4f
+                    validation-request-2:
+                      plugin: jhove
+                      args:
+                        format_identification:
+                          plugin: fido-puid
       callbacks:
         termination:
           $ref: '#/components/callbacks/termination'
@@ -199,82 +210,6 @@ paths:
           $ref: '#/components/responses/422SemanticProblem'
         '503':
           $ref: '#/components/responses/503Busy'
-  /validate/ip:
-    post:
-      summary: validate IP
-      description: |-
-        Perform the sequence of validation-steps as listed in the Modules-argument.
-
-        If Modules is left empty, the default uses all validation-modules, e.g.
-        * validate IP-payload integrity (file checksums),
-        * validate IP-payload structure (payload-profile),
-        * identify IP-payload file formats, and
-        * validate those files with respect to their format.
-
-        If the request is accepted, a 201-response is triggered containing a JobToken.
-        This token is required in the /report-endpoint to get a Report.
-      operationId: validate_ip
-      tags:
-        - validation
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                validation:
-                  type: object
-                  properties:
-                    target:
-                      $ref: '#/components/schemas/Target'
-                    modules:
-                      $ref: '#/components/schemas/ListOfModules'
-                    args:
-                      type: object
-                      description:
-                        module-specific arguments
-                      properties:
-                        payload_structure:
-                          type: object
-                          description:
-                            arguments for the payload_structure module
-                          properties:
-                            profileUrl:
-                              $ref: '#/components/schemas/ProfileUrl'
-                  required:
-                    - target
-                callbackUrl:
-                  $ref: '#/components/schemas/CallbackUrl'
-              required:
-                - validation
-              example:
-                validation:
-                  target:
-                    path: ip/abcde-12345-fghijk-67890
-                  modules:
-                    - payload_structure
-                    - payload_integrity
-                    - file_format
-                  args:
-                    payload_structure:
-                      profileUrl:
-                        https://www.lzv.nrw/payload_profile.json
-      callbacks:
-        termination:
-          $ref: '#/components/callbacks/termination'
-      responses:
-        '201':
-          $ref: '#/components/responses/201AcceptedSubmission'
-        '400':
-          $ref: '#/components/responses/400BadRequest'
-        '404':
-          $ref: '#/components/responses/404NoTarget'
-        '422':
-          $ref: '#/components/responses/422SemanticProblem'
-        '503':
-          $ref: '#/components/responses/503Busy'
-  /validate:
     delete:
       summary: abort job
       description:
@@ -341,10 +276,79 @@ paths:
                   "notification service unavailable"
 components:
   schemas:
+    PluginArgSignature:
+      title: PluginArgSignature
+      type: object
+      description: plugin argument
+      properties:
+        type:
+          type: string
+          description: JSON type of the argument
+          enum:
+            - "string"
+            - "integer"
+            - "number"
+            - "boolean"
+            - "array"
+            - "object"
+          example: string
+        required:
+          type: boolean
+          description:
+            if true, this argument is required for a valid request
+          example: false
+        description:
+          type: string
+          description: description of argument's purpose
+          example: this argument sets ...
+        example:
+          description: example for argument value
+          example: 0
+        default:
+          description: |-
+            default value
+
+            only applicable in case of "required: false" and only to
+            primitive types or array
+          example: 0
+        itemType:
+          type: string
+          enum:
+            - "string"
+            - "integer"
+            - "number"
+            - "boolean"
+          description: |-
+            required in case of "type: array"; type of array elements
+
+            Note that all arguments in an array are required to have the
+            same type and cannot have default values assigned individually.
+            A default can be given for the entire array in the parent
+            PluginArgSignature. Only primitive types are allowed.
+        properties:
+          type: object
+          description: |-
+            required in case of "type: object"; mapping of child-names
+            and child-PluginArgSignature
+          additionalProperties:  # valid but not rendered in SwaggerUI
+            $ref: '#/components/schemas/PluginArgSignature'
+        additional_properties:
+          type: boolean
+          description: |-
+            only applicable in case of "type: object"; if false, only
+            explicitly listed properties are accepted
+          example: false
+      example:
+        type: integer
+        required: false
+        default: 0
+      required:
+        - type
+        - required
     Plugin:
       title: Plugin
-      type: object
       description: DCM-service plugin
+      type: object
       properties:
         name:
           type: string
@@ -353,10 +357,29 @@ components:
         description:
           type: string
           description: description of plugin features
-          example: this plugin performs ...
+          example: performs ...
+        signature:
+          $ref: '#/components/schemas/PluginArgSignature'
+        context:
+          type: string
+          description: identifier for the plugin context
+          example: context-0
+        dependencies:
+          type: object
+          description: plugin's dependency versions
+          additionalProperties:
+            type: string
+            description: dependency version
+          example:
+            dependency-a: "1.0.0"
+        info:
+          type: object
+          description: plugin-specific information in custom format
+          additionalProperties: true
       required:
         - name
         - description
+        - signature
     SelfDescription:
       type: object
       description: information regarding the service's properties
@@ -387,15 +410,11 @@ components:
               type: object
               description: deployed software versions
               properties:
-                java:
+                JHOVE:
                   type: string
-                  description: version of the deployed Java-runtime
-                  example: openjdk 17.0.11 2024-04-16
-                jhove:
-                  type: string
-                  description: version of the deployed JHOVE
+                  description: version of the deployed JHOVE-app
                   example: Jhove (Rel. 1.28.0, 2023-05-18)
-                jhove_modules:
+                JHOVE_MODULES:
                   type: object
                   description: versions of deployed JHOVE-modules
                   additionalProperties:
@@ -404,11 +423,6 @@ components:
                     JPEG-hul: "1.5.4"
                     PDF-hul: "1.12.4"
                     TIFF-hul: "1.9.4"
-            profile_payload:
-              type: string
-              description:
-                version string of the default BagIt-payload-profile
-              example: "0.1.0"
             lib:
               type: object
               description: deployed library versions
@@ -537,52 +551,10 @@ components:
                     - debug
                     - controls_api
                     - abort
-                validation:
-                  type: object
-                  description: validation-related settings
-                  properties:
-                    object:
-                      type: object
-                      description: object validation-related settings
-                      properties:
-                        plugins:
-                          type: array
-                          description: list of default plugin identifiers
-                          items:
-                            type: string
-                            description: plugin identifier
-                          example:
-                            - file_format
-                            - file_integrity
-                      required:
-                        - plugins
-                    ip:
-                      type: object
-                      description: IP validation-related settings
-                      properties:
-                        payload_profile:
-                          type: string
-                          description: default BagIt payload profile identifier
-                          example: "https://www.lzv.nrw/payload_profile.json"
-                        plugins:
-                          type: object
-                          description: list of default plugin identifiers
-                          items:
-                            type: string
-                            description: plugin identifier
-                          example:
-                            - file_format
-                            - payload_integrity
-                      required:
-                        - plugins
-                  required:
-                    - object
-                    - ip
               required:
                 - allow_cors
                 - fs_mount_point
                 - orchestration
-                - validation
             plugins:
               type: object
               description: mapping of available plugins
@@ -591,7 +563,19 @@ components:
               example:
                 plugin-0:
                   name: plugin-0
-                  description: this plugin performs ...
+                  description: performs ...
+                  signature:
+                    type: object
+                    required: true
+                    properties:
+                      param-0:
+                        type: integer
+                        required: false
+                        default: 0
+                    additional_properties: false
+                  context: context-0
+                  dependencies:
+                    dependency-a: "1.0.0"
             services:
               type: object
               description:
@@ -681,16 +665,11 @@ components:
           example: true
       required:
         - ready
-    ProfileUrl:
-      title: ProfileURL
-      description: |-
-        url for a job-specific BagIt Payload Profile.
-
-        If empty, the default value as configured in the container-.env
-        of DEFAULT_PAYLOAD_PROFILE_URL is used. Use `/identify` to get
-        default profile information for this container.
+    Path:
+      title: Path
+      description: relative path
       type: string
-      example: https://www.lzv.nrw/payload_profile.json
+      example: obj/abcde-12345-fghijk-67890.tiff
     Target:
       title: Target
       description:
@@ -699,9 +678,7 @@ components:
       type: object
       properties:
         path:
-          type: string
-          description: relative path
-          example: ip/abcde-12345-fghijk-67890
+          $ref: '#/components/schemas/Path'
       required:
         - path
     LogMessage:
@@ -757,54 +734,80 @@ components:
             body: Job exited normally.
     JobData:
       title: JobData
-      description: |-
-        job output data (data-property in Report schema)
-
-        additionalProperties keys are given by modules' string-
-        identifiers
+      description: job output data
       type: object
       properties:
+        success:
+          type: boolean
+          description: whether the process has been successful
         valid:
           type: boolean
-          description: overall validity; true if Object/IP is valid
+          description: overall validity of object(s)
         details:
           type: object
-          description: detailed validation results per module
+          description: detailed validation results by plugin
           additionalProperties:
             type: object
-            description: validation result by module (identifier)
+            description: object validation result
             properties:
+              success:
+                type: boolean
+                description: whether the process has been successful
               valid:
                 type: boolean
                 description: validation result
-              log:
-                $ref: "#/components/schemas/Log"
-            required:
-              - valid
-              - log
-      required:
-        - details
+              records:
+                type: object
+                description: validation results by record
+                additionalProperties:
+                  type: object
+                  description: plugin execution details for given record
+                  properties:
+                    success:
+                      type: boolean
+                      description: whether the process has been successful
+                    valid:
+                      type: boolean
+                      description: validation result
+                    path:
+                      $ref: '#/components/schemas/Path'
+                    log:
+                      $ref: "#/components/schemas/Log"
+                  additionalProperties: true
+                  required:
+                    - path
+                    - log
       example:
+        success: true
         valid: false
         details:
-          file_format:
-            valid: false
-            log:
-              ERROR:
-                - datetime: "2024-01-01T00:00:01+00:00"
-                  origin: File Format Validator | Jhove-Plugin
-                  body: File '<...>' has a bad file header.
-              INFO:
-                - datetime: "2024-01-01T00:00:01+00:00"
-                  origin: File Format Validator | Jhove-Plugin
-                  body: File formats are invalid.
-          payload_integrity:
+          integrity:
+            success: true
             valid: true
-            log:
-              INFO:
-                - datetime: "2024-01-01T00:00:01+00:00"
-                  origin: Payload Integrity Validator
-                  body: No problems with payload integrity.
+            records:
+              0:
+                success: true
+                valid: true
+                path: obj/abcde-12345-fghijk-67890.tiff
+                log:
+                  INFO:
+                    - datetime: "2024-01-01T00:00:01+00:00"
+                      origin: integrity-Plugin
+                      body: File checksum is valid
+          jhove:
+            success: true
+            valid: false
+            records:
+              0:
+                success: true
+                valid: false
+                path: obj/abcde-12345-fghijk-67890.tiff
+                module: TIFF-hul
+                log:
+                  ERROR:
+                    - datetime: "2024-01-01T00:00:01+00:00"
+                      origin: jhove-Plugin
+                      body: File has a bad file header.
     Report:
       title: Report
       description: |-
@@ -865,10 +868,18 @@ components:
         args:
           validation:
             target:
-              path: ip/abcde-12345-fghijk-67890
-            modules:
-              - file_format
-              - payload_integrity
+              path: obj/abcde-12345-fghijk-67890.tiff
+            plugins:
+              validation-request-1:
+                plugin: integrity
+                args:
+                  method: md5
+                  value: 46a78da2a246a86f76d066db766cda4f
+              validation-request-2:
+                plugin: jhove
+                args:
+                  format_identification:
+                    plugin: fido-puid
         progress:
           status: completed
           verbose: Job terminated normally.
@@ -876,12 +887,12 @@ components:
         log:
           ERROR:
             - datetime: "2024-01-01T00:00:01+01:00"
-              origin: Object Validator
-              body: Validator 'file_format' returned invalid.
+              origin: JHOVE-Plugin
+              body: Missing file-header in '<...>'.
           INFO:
             - datetime: "2024-01-01T00:00:01+01:00"
               origin: Object Validator
-              body: Validator 'payload_integrity' returned valid.
+              body: Calling 'JHOVE-Plugin'.
           EVENT:
             - datetime: "2024-01-01T00:00:00+01:00"
               origin: Object Validator
@@ -889,32 +900,6 @@ components:
             - datetime: "2024-01-01T00:00:02+01:00"
               origin: Object Validator
               body: Job exited normally.
-    ListOfModules:
-      title: ListOfModules
-      type: array
-      description: |-
-        List of modules to be used for validation of IPs
-
-        If omitted, all available modules are used for validation.
-        In order to skip these validation steps, an empty list can be
-        passed.
-
-        The identifiers for the modules used here are identical
-        to those returned in the /identify-endpoint.
-
-        The module file_format uses all available plugins for validation
-        of file formats. Individual plugins for the file_format-module
-        can be selected by prepending 'file_format_' to the plugin's
-        name.
-
-        Listing unavailable or unknown modules yields a report tagged as invalid.
-        Use the /identify-endpoint to get a list of available Module-arguments.
-      items:
-        type: string
-      example:
-        - payload_structure
-        - payload_integrity
-        - file_format
     CallbackUrl:
       title: CallbackURL
       type: string
