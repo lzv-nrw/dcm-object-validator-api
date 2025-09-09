@@ -2,7 +2,7 @@ import os
 from setuptools import setup
 
 setup(
-    version="5.1.0",
+    version="6.0.0",
     name="dcm-object-validator-api",
     description="specification of the DCM Object Validator API",
     author="LZV.nrw",
